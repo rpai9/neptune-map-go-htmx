@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neptune Map Generator - Go + HTMX</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1e2e;
+      --surface: #1a2f45;
+      --surface-2: #243f5b;
+      --accent: #f5a623;
+      --text: #e7edf5;
+      --muted: #9eb2c8;
+      --danger: #ff6b6b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 15%, #274b6b 0%, transparent 30%),
+        radial-gradient(circle at 82% 0%, #3f6f98 0%, transparent 28%),
+        linear-gradient(130deg, #0e1a29 0%, #0f1e2e 45%, #13263b 100%);
+      height: 100vh;
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 16px;
+      max-width: 1800px;
+      margin: 0 auto;
+      height: 100%;
+    }
+
+    .panel {
+      background: color-mix(in srgb, var(--surface) 90%, black 10%);
+      border: 1px solid #2f4e6c;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 20px 35px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    aside.panel {
+      overflow-y: auto;
+    }
+
+    /* Custom scrollbar for aside.panel */
+    aside.panel::-webkit-scrollbar {
+      width: 8px;
+    }
+    aside.panel::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 4px;
+    }
+    aside.panel::-webkit-scrollbar-thumb {
+      background: var(--surface-2);
+      border-radius: 4px;
+    }
+    aside.panel::-webkit-scrollbar-thumb:hover {
+      background: #355878;
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 1.35rem;
+      letter-spacing: 0.4px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin: 0 0 10px;
+      font-size: 0.88rem;
+    }
+
+    .section-title {
+      margin: 10px 0 6px;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #2f4e6c;
+      padding-bottom: 3px;
+    }
+
+    label {
+      display: block;
+      margin: 6px 0 2px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid #355878;
+      background: var(--surface-2);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 0.88rem;
+    }
+
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      background: var(--accent);
+      color: #1a1a1a;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.88rem;
+    }
+
+    button.secondary {
+      background: #7bb3e3;
+    }
+
+    button:hover {
+      filter: brightness(1.05);
+    }
+
+    .error {
+      background: rgba(255, 107, 107, 0.14);
+      border: 1px solid rgba(255, 107, 107, 0.5);
+      color: #ffd4d4;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+    }
+
+    .success {
+      background: rgba(108, 219, 157, 0.15);
+      border: 1px solid rgba(108, 219, 157, 0.45);
+      color: #d6ffe9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      font-size: 0.9rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 12px;
+      margin-bottom: 4px;
+    }
+
+    .form-grid-3 {
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .form-grid label {
+      margin-top: 2px;
+    }
+
+    main.panel {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    #json-panel {
+      display: grid;
+      grid-template-areas:
+        "error error"
+        "buttons text";
+      grid-template-columns: 200px 1fr;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    #json-panel .error {
+      grid-area: error;
+      margin-bottom: 0;
+    }
+
+    #json-panel .button-row {
+      grid-area: buttons;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 0;
+    }
+
+    #json-panel textarea,
+    #json-panel .CodeMirror {
+      grid-area: text;
+      height: 160px !important;
+      min-height: 100px;
+    }
+
+    .CodeMirror {
+      background: var(--surface-2) !important;
+      color: var(--text) !important;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+      font-size: 0.82rem;
+      border: 1px solid #355878;
+      border-radius: 8px;
+    }
+
+    .CodeMirror-gutters {
+      background: color-mix(in srgb, var(--surface-2) 90%, black 10%) !important;
+      border-right: 1px solid #355878 !important;
+    }
+
+    .CodeMirror-linenumber {
+      color: var(--muted) !important;
+    }
+
+    .CodeMirror-cursor {
+      border-left: 2px solid var(--accent) !important;
+    }
+
+    /* JSON highlight tokens */
+    .cm-s-default .cm-property { color: #53d18d; } /* keys */
+    .cm-s-default .cm-string { color: #f5a623; } /* strings */
+    .cm-s-default .cm-number { color: #7bb3e3; } /* numbers */
+    .cm-s-default .cm-atom { color: #ff6b6b; } /* booleans */
+
+    #plot {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #2f4e6c;
+      background: #101f31;
+    }
+
+    .bmc-container {
+      margin-bottom: 12px;
+      display: flex;
+    }
+
+    .bmc-container img {
+      height: 34px;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      transition: transform 0.2s, filter 0.2s;
+    }
+
+    .bmc-container img:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.05);
+    }
+
+    @media (max-width: 1100px) {
+      body {
+        height: auto;
+        overflow: auto;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+
+      .panel {
+        height: auto;
+        overflow: visible;
+      }
+
+      #json-panel {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "error"
+          "text"
+          "buttons";
+      }
+
+      #json-panel .button-row {
+        flex-direction: row;
+      }
+
+      #json-panel textarea,
+      #json-panel .CodeMirror {
+        height: 220px !important;
+      }
+
+      #plot {
+        min-height: 520px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel">
+      <h1>Neptune Map Generator</h1>
+      <p class="subtitle">Go + HTMX editor with JSON output and manual map refresh.</p>
+      <div class="bmc-container">
+        <script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="rpai" data-color="#FFDD00" data-emoji="" data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff" ></script>
+      </div>
+
+      <form
+        id="configForm"
+        hx-post="/generate"
+        hx-target="#json-panel"
+        hx-swap="outerHTML"
+      >
+        <div class="section-title">Galaxy</div>
+        <div class="form-grid">
+          <div>
+            <label for="total_points"># Stars</label>
+            <input id="total_points" name="total_points" type="number" value="{{.Config.TotalPoints}}" min="1" required>
+          </div>
+          <div>
+            <label for="num_arms">Num Arms</label>
+            <input id="num_arms" name="num_arms" type="number" value="{{.Config.NumArms}}" min="1" required>
+          </div>
+          <div>
+            <label for="pitch_angle_degrees">Pitch Angle (Deg)</label>
+            <input id="pitch_angle_degrees" name="pitch_angle_degrees" type="number" step="0.1" value="{{.Config.PitchAngleDegrees}}" required>
+          </div>
+          <div>
+            <label for="min_distance">Min Distance</label>
+            <input id="min_distance" name="min_distance" type="number" step="0.1" value="{{.Config.MinDistance}}" required>
+          </div>
+          <div>
+            <label for="radius_limit">Radius Limit</label>
+            <input id="radius_limit" name="radius_limit" type="number" step="0.1" value="{{.Config.RadiusLimit}}" required>
+          </div>
+          <div>
+            <label for="galaxy_type">Galaxy Type</label>
+            <select id="galaxy_type" name="galaxy_type">
+              <option value="spiral" {{if eq .Config.GalaxyType "spiral"}}selected{{end}}>spiral</option>
+              <option value="elliptical" {{if eq .Config.GalaxyType "elliptical"}}selected{{end}}>elliptical</option>
+              <option value="irregular" {{if eq .Config.GalaxyType "irregular"}}selected{{end}}>irregular</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section-title">Wormholes</div>
+        <label for="wormholes_raw">pairs (JSON array)</label>
+        <textarea id="wormholes_raw" name="wormholes_raw">{{.Config.WormholesRaw}}</textarea>
+
+        <div class="section-title">Player Positioning</div>
+        <div class="form-grid">
+          <div>
+            <label for="num_players"># Players</label>
+            <input id="num_players" name="num_players" type="number" min="0" value="{{.Config.NumPlayers}}" required>
+          </div>
+          <div>
+            <label for="max_dist_to_neighbor">Max Dist to Neighbor</label>
+            <input id="max_dist_to_neighbor" name="max_dist_to_neighbor" type="number" step="0.1" value="{{.Config.MaxDistToNeighbor}}" required>
+          </div>
+        </div>
+
+        <div class="section-title">Non-Player Star Resources</div>
+        <div class="form-grid">
+          <div>
+            <label for="non_player_min_r">Min Resource (r)</label>
+            <input id="non_player_min_r" name="non_player_min_r" type="number" min="0" value="{{.Config.NonPlayerMinR}}" required>
+          </div>
+          <div>
+            <label for="non_player_max_r">Max Resource (r)</label>
+            <input id="non_player_max_r" name="non_player_max_r" type="number" min="0" value="{{.Config.NonPlayerMaxR}}" required>
+          </div>
+          <div>
+            <label for="non_player_min_g">Min Gate (g)</label>
+            <input id="non_player_min_g" name="non_player_min_g" type="number" min="0" value="{{.Config.NonPlayerMinG}}" required>
+          </div>
+          <div>
+            <label for="non_player_max_g">Max Gate (g)</label>
+            <input id="non_player_max_g" name="non_player_max_g" type="number" min="0" value="{{.Config.NonPlayerMaxG}}" required>
+          </div>
+          <div>
+            <label for="non_player_min_e">Min Economy (e)</label>
+            <input id="non_player_min_e" name="non_player_min_e" type="number" min="0" value="{{.Config.NonPlayerMinE}}" required>
+          </div>
+          <div>
+            <label for="non_player_max_e">Max Economy (e)</label>
+            <input id="non_player_max_e" name="non_player_max_e" type="number" min="0" value="{{.Config.NonPlayerMaxE}}" required>
+          </div>
+          <div>
+            <label for="non_player_min_i">Min Industry (i)</label>
+            <input id="non_player_min_i" name="non_player_min_i" type="number" min="0" value="{{.Config.NonPlayerMinI}}" required>
+          </div>
+          <div>
+            <label for="non_player_max_i">Max Industry (i)</label>
+            <input id="non_player_max_i" name="non_player_max_i" type="number" min="0" value="{{.Config.NonPlayerMaxI}}" required>
+          </div>
+          <div>
+            <label for="non_player_min_s">Min Science (s)</label>
+            <input id="non_player_min_s" name="non_player_min_s" type="number" min="0" value="{{.Config.NonPlayerMinS}}" required>
+          </div>
+          <div>
+            <label for="non_player_max_s">Max Science (s)</label>
+            <input id="non_player_max_s" name="non_player_max_s" type="number" min="0" value="{{.Config.NonPlayerMaxS}}" required>
+          </div>
+        </div>
+
+        <div class="section-title">Player Initial Resource</div>
+        <div class="form-grid form-grid-3">
+          <div>
+            <label for="r">Resource (r)</label>
+            <input id="r" name="r" type="number" value="{{.Config.InitialR}}" required>
+          </div>
+          <div>
+            <label for="g">Gate (g)</label>
+            <input id="g" name="g" type="number" value="{{.Config.InitialG}}" required>
+          </div>
+          <div>
+            <label for="e">Economy (e)</label>
+            <input id="e" name="e" type="number" value="{{.Config.InitialE}}" required>
+          </div>
+          <div>
+            <label for="i">Industry (i)</label>
+            <input id="i" name="i" type="number" value="{{.Config.InitialI}}" required>
+          </div>
+          <div>
+            <label for="s">Science (s)</label>
+            <input id="s" name="s" type="number" value="{{.Config.InitialS}}" required>
+          </div>
+          <div>
+            <label for="st">ST (st)</label>
+            <input id="st" name="st" type="number" value="{{.Config.InitialST}}" required>
+          </div>
+        </div>
+
+        <div class="button-row">
+          <button type="submit">Generate JSON</button>
+        </div>
+      </form>
+    </aside>
+
+    <main class="panel">
+      {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+      {{if .Message}}<div class="success">{{.Message}}</div>{{end}}
+
+      <div id="json-panel">
+        <textarea id="jsonText" name="json_text">{{.JSONText}}</textarea>
+        <div class="button-row">
+          <button type="button" class="secondary" onclick="copyJson()">Copy JSON</button>
+          <button type="button" onclick="refreshMap()">Refresh Map From JSON</button>
+        </div>
+      </div>
+
+      <div id="plot"></div>
+    </main>
+  </div>
+
+  <script>
+    let editor = null;
+
+    function initEditor() {
+      const textarea = document.getElementById('jsonText');
+      if (!textarea) {
+        return;
+      }
+      // If an editor instance already exists, make sure to clean it up
+      if (editor) {
+        try {
+          editor.toTextArea();
+        } catch (e) {}
+      }
+      editor = CodeMirror.fromTextArea(textarea, {
+        mode: 'application/json',
+        lineNumbers: true,
+        lineWrapping: true
+      });
+    }
+
+    function copyJson() {
+      const text = getJsonText();
+      navigator.clipboard.writeText(text).catch(() => {
+        alert('Copy failed. Please copy manually.');
+      });
+    }
+
+    function getJsonText() {
+      if (editor) {
+        return editor.getValue().trim();
+      }
+      const jsonField = document.getElementById('jsonText');
+      if (!jsonField) {
+        return '';
+      }
+      return jsonField.value.trim();
+    }
+
+    function refreshMap() {
+      const text = getJsonText();
+      if (!text) {
+        return;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        alert('Invalid JSON: ' + err.message);
+        return;
+      }
+
+      if (!data.stars || !Array.isArray(data.stars) || !Array.isArray(data.wormholes)) {
+        alert('JSON must contain stars[] and wormholes[].');
+        return;
+      }
+
+      const plotDiv = document.getElementById('plot');
+      if (!plotDiv) {
+        return;
+      }
+
+      const starTraces = data.stars.map(star => ({
+        x: [star.x],
+        y: [star.y],
+        mode: 'markers',
+        marker: {
+          color: star.puid ? '#53d18d' : '#f5f7fb',
+          size: star.puid ? 9 : 5,
+          symbol: 'star'
+        },
+        text: `Index: ${star.uid}, Name: ${star.name}, R:${star.r}, G:${star.g}, E:${star.e}, I:${star.i}, S:${star.s}, ST:${star.st}`,
+        hoverinfo: 'text',
+        name: star.puid ? `Player ${star.puid}` : 'Star',
+        showlegend: false
+      }));
+
+      const starsByUID = new Map(data.stars.map(s => [s.uid, s]));
+      const wormholeTraces = data.wormholes
+        .map(pair => {
+          const a = starsByUID.get(pair[0]);
+          const b = starsByUID.get(pair[1]);
+          if (!a || !b) return null;
+          return {
+            x: [a.x, b.x],
+            y: [a.y, b.y],
+            mode: 'lines',
+            line: { color: '#f5a623', width: 1.8 },
+            name: 'Wormhole',
+            showlegend: false
+          };
+        })
+        .filter(Boolean);
+
+      const layout = {
+        title: { text: 'Galaxy Map', x: 0.5 },
+        paper_bgcolor: '#0f1e2e',
+        plot_bgcolor: '#101f31',
+        font: { color: '#e7edf5' },
+        xaxis: { showgrid: false, zeroline: false, title: 'X' },
+        yaxis: { showgrid: false, zeroline: false, title: 'Y' },
+        margin: { l: 48, r: 20, t: 55, b: 45 },
+        hovermode: 'closest'
+      };
+
+      Plotly.react(plotDiv, [...wormholeTraces, ...starTraces], layout, { responsive: true });
+    }
+
+    document.body.addEventListener('htmx:afterSettle', function (evt) {
+      if (evt.target && evt.target.id === 'json-panel') {
+        initEditor();
+        requestAnimationFrame(refreshMap);
+      }
+    });
+
+    initEditor();
+    refreshMap();
+  </script>
+</body>
+</html>
